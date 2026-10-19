@@ -46,18 +46,32 @@ class SigmaClient:
                 "client_secret": self.client_secret or "",
             }
         ).encode()
-        request = urllib.request.Request(
-            f"{self.base_url}/v2/auth/token",
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                payload = json.load(response)
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", "replace")
-            raise SigmaAPIError(exc.code, "POST", request.full_url, body) from exc
+        url = f"{self.base_url}/v2/auth/token"
+        for attempt in range(self.max_retries + 1):
+            request = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    payload = json.load(response)
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")
+                if exc.code in {429, 500, 502, 503, 504} and attempt < self.max_retries:
+                    retry_after = exc.headers.get("Retry-After")
+                    delay = float(retry_after) if retry_after and retry_after.isdigit() else min(30, 2**attempt + random.random())
+                    time.sleep(delay)
+                    continue
+                raise SigmaAPIError(exc.code, "POST", request.full_url, body) from exc
+            except urllib.error.URLError:
+                if attempt >= self.max_retries:
+                    raise
+                time.sleep(min(30, 2**attempt + random.random()))
+        else:
+            raise AssertionError("authentication retry loop exhausted")
         self.access_token = payload["access_token"]
         self._token_expires_at = time.monotonic() + max(0, int(payload.get("expires_in", 3600)) - 60)
 
@@ -123,4 +137,3 @@ class SigmaClient:
                 raise RuntimeError(f"Pagination token repeated for {path}")
             seen_tokens.add(token)
             query[page_param] = token
-
