@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sigma-lineage-assessment"
+version = "0.1.0"
+description = "Export Sigma workbook, data model, source, and lineage relationships to CSV"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+sigma-assess = "sigma_assessment.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sigma_assessment*"]
+
